@@ -68,6 +68,7 @@ const userSchema = new mongoose.Schema(
 
     photo: {
       type: String,
+      default:"https://www.freeimages.com/photo/peacock-1169961",
       //   match: [
       //     /^(http(s?):)([/|.|\w|\s|-])*\.(?:jpg|gif|png|jpeg)$/,
       //     "Photo must be a valid image URL",
