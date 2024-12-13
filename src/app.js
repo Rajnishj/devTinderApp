@@ -1,11 +1,15 @@
 const express = require("express");
 const connectDB = require("./config/database");
+var bcrypt = require("bcryptjs");
+var jwt = require('jsonwebtoken');
 const { userAuth } = require("./middleware/auth");
 const User = require("./models/user");
+const { validateData } = require("./utils/validation");
+const cookiesParser = require("cookie-parser")
 
 const app = express();
 app.use(express.json());
-
+app.use(cookiesParser())
 
 // app.post("/signup", async (req, res) => {
 //   const reqBody = req.body;
@@ -96,10 +100,23 @@ app.use(express.json());
 // });
 
 app.post("/signup", async (req, res) => {
-  const reqBody = req.body;
-  const user = new User(reqBody);
-
   try {
+    const reqBody = req.body;
+
+    validateData(req);
+    const { firstName, lastName, emailId, password, skills, photo, age, gender, about } = req.body;
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = new User({
+      firstName,
+      lastName,
+      password: passwordHash,
+      emailId,
+      skills,
+      photo,
+      age,
+      gender,
+      about,
+    });
     await user.save();
     res.status(201).json({
       message: "User added successfully",
@@ -120,78 +137,46 @@ app.post("/signup", async (req, res) => {
     }
   }
 });
-
-app.get("/user", async (req, res) => {
-  console.log(req.body);
-  const userEmail = req.body.emailId;
-
+app.post("/login", async (req, res) => {
   try {
-    const users = await User.find({ emailId: userEmail });
-    if (users.length === 0) {
-      res.status(404).json({
-        message: "User not found.",
+    const { emailId, password } = req.body;
+    //use findOne method so the data will be object instead of array as we know find method will return array of object
+    const user = await User.findOne({ emailId: emailId });
+    if (!user) {
+      throw new Error("Invalid credentials.");
+    }
+    const isPasswordValid = await user.validatePassword(password)
+
+    if (isPasswordValid) {
+      const token = await user.getJWT()
+      res.cookie("token",token)
+      res.send({
+        message: "Logined in successfully.",
+        user: user
       });
     } else {
-      res.send(users);
+      throw new Error("Invalid credentials.");
     }
   } catch (error) {
     res.status(400).json({
-      message: "Something went wrong",
+      message: "Error during form Login",
       error: error.message,
     });
   }
 });
-app.get("/feed", async (req, res) => {
+app.get("/profile",userAuth, async (req, res) => {
   try {
-    const users = await User.find({});
-    res.send(users);
+    const user = req.user
+    res.send(user)
   } catch (error) {
     res.status(400).json({
-      message: "Something went wrong",
+      message: "Error during form Login",
       error: error.message,
     });
   }
-});
-app.delete("/user", async (req, res) => {
-  console.log(req.body);
-  const userId = req.body.userId;
-
-  try {
-    await User.findByIdAndDelete(userId);
-    res.send({
-      message: "User Deleted Successfully.",
-    });
-  } catch (error) {
-    res.status(400).json({
-      message: "Something went wrong",
-      error: error.message,
-    });
-  }
+ 
 });
 
-app.patch("/user/:UserId", async (req, res) => {
-  const userId = req.params.UserId;
-  const data = req.body;
-  const ALLOWED_USERS = ["photo", "firstName", "lastName", "age", "gender", "skills", "about"];
-  const isAllowedUpdate = Object.keys(data).every((key) => ALLOWED_USERS.includes(key));
-  try {
-    if (!isAllowedUpdate) {
-      throw new Error('User not allowed to update the field or invalid request');
-    } 
-    if (data.skills.length > 10) {
-      throw new Error('Skills cannot be more than 10.');
-    }
-    await User.findByIdAndUpdate({ _id: userId }, data,{runValidators:true});
-    res.send({
-      message: "User Updated successfully",
-    });
-  } catch (error) {
-    res.status(400).json({
-      message: "Something went wrong",
-      error: error.message,
-    });
-  }
-});
 connectDB()
   .then(() => {
     console.log("Database connecting established...");
