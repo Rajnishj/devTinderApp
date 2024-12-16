@@ -1,16 +1,22 @@
 const express = require("express");
 var bcrypt = require("bcryptjs");
 const User = require("../models/user");
-const { validateData } = require("../utils/validation");
+const { validateData, convertImageToInCloudnary } = require("../utils/validation");
+
+const upload  = require("../middleware/multer");
 
 const authRouter = express.Router();
 
-authRouter.post("/signup", async (req, res) => {
-  try {
-    const reqBody = req.body;
 
+
+authRouter.post("/signup",upload.single("photo"), async (req, res) => {
+  const SAFE_USER_DATA = "firstName lastName photo age gender skill";
+  try {
+    const file = req.file;
     validateData(req);
-    const { firstName, lastName, emailId, password, skills, photo, age, gender, about } = req.body;
+    const cloudResponse = await convertImageToInCloudnary(file)
+
+    const { firstName, lastName, emailId, password, skills, age, gender, about } = req.body;
     const passwordHash = await bcrypt.hash(password, 10);
     const user = new User({
       firstName,
@@ -18,15 +24,24 @@ authRouter.post("/signup", async (req, res) => {
       password: passwordHash,
       emailId,
       skills,
-      photo,
+      photo: cloudResponse.secure_url,
       age,
       gender,
       about,
     });
     await user.save();
+    const userResponse = {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      photo: user.photo,
+      age: user.age,
+      gender: user.gender,
+      skills: user.skills,
+      about: user.about,
+    }
     res.status(201).json({
       message: "User added successfully",
-      user: user, // Include the user data in the response
+      user: userResponse,
     });
   } catch (error) {
     if (error.code === 11000) {
@@ -35,7 +50,6 @@ authRouter.post("/signup", async (req, res) => {
         message: "Email has already been used. Please enter another email ID to proceed.",
       });
     } else {
-      // Handle other errors
       res.status(400).json({
         message: "Error during form handling",
         error: error.message,
@@ -55,10 +69,14 @@ authRouter.post("/login", async (req, res) => {
 
     if (isPasswordValid) {
       const token = await user.getJWT();
-      res.cookie("token", token);
-      res.send({
-        message: "Logined in successfully.",
-        user: user,
+      res.cookie("token", token, {
+        httpOnly: true, // Prevents access to the cookie via client-side JavaScript
+        //secure: process.env.NODE_ENV === "production", // Ensures cookies are only sent over HTTPS in production
+        sameSite: "strict", // Prevents CSRF attacks
+        maxAge: 7 * 24 * 60 * 60 * 1000, // Cookie expiry (1 week)
+      }).json({
+        message: "Logged in successfully",
+        user,
       });
     } else {
       throw new Error("Invalid credentials.");

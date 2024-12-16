@@ -1,5 +1,7 @@
 const Validator = require("validator");
-
+const sharp = require('sharp');
+const getDataUri  = require("./datauri");
+const cloudinary  = require("./cloudnary");
 const validateData = (req) => {
   const { firstName, lastName, emailId, password } = req.body;
   if (!firstName || !lastName) {
@@ -28,4 +30,38 @@ const validateEditProfileData = (req) => {
   };
   
 
-module.exports = { validateData, validateEditProfileData };
+  const convertImageToInCloudnary = async(file) =>{
+    const supportedFormats = ["image/jpeg", "image/png", "application/pdf"];
+    if (!supportedFormats.includes(file.mimetype)) {
+      return res.status(400).json({ message: "Unsupported file format" });
+    }
+    let cloudResponse;
+    if (file.mimetype === "application/pdf") {
+      // Handle PDF upload
+      const fileUri = getDataUri(file);
+      //console.log(fileUri,"fileuri")
+      cloudResponse = await cloudinary.uploader.upload(fileUri, {
+        resource_type: "raw", // Use 'raw' for non-image files like PDFs
+        folder: "users/pdfs", // Optional: specify folder in Cloudinary
+        format: "png",
+      });
+    } else {
+      // Handle image upload (JPEG/PNG)
+      const optimizedImageBuffer = await sharp(file.buffer)
+        .resize({ width: 800, height: 800, fit: "inside" })
+        .toFormat("jpeg", { quality: 80 })
+        .toBuffer();
+
+      // Convert buffer to Data URI
+      const fileUri = `data:image/jpeg;base64,${optimizedImageBuffer.toString(
+        "base64"
+      )}`;
+
+      cloudResponse = await cloudinary.uploader.upload(fileUri, {
+        folder: "users/images", // Optional: specify folder in Cloudinary
+      });
+    }
+  return cloudResponse
+  }
+
+module.exports = { validateData, validateEditProfileData,convertImageToInCloudnary };
